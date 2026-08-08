@@ -13,14 +13,14 @@ class TodoListView(APIView):
     POST /todos/ - создание новой задачи
     """
     def get(self, request):
-        todos = Todo.objects.all()
+        todos = Todo.objects.filter(owner=request.user)
         serializer = TodoSerializer(todos, many=True)
         return Response(serializer.data)
 
     def post(self, request):
         serializer = TodoSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(owner=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -33,16 +33,16 @@ class TodoDetailView(APIView):
     Patch /todos/<id>/ - частичное обновление задачи по id
     Delete /todos/<id>/ - удаление задачи по id"""
     
-    def get_object(self,pk):
-        return get_object_or_404(Todo, pk=pk)
+    def get_object(self, pk, user):
+        return get_object_or_404(Todo, pk=pk, owner=user)
 
-    def get(self,request, pk):
-        todo = self.get_object(pk)
+    def get(self, request, pk):
+        todo = self.get_object(pk, request.user)
         serializer = TodoSerializer(todo)
         return Response(serializer.data)
 
     def put(self, request, pk):
-        todo = self.get_object(pk)
+        todo = self.get_object(pk, request.user)
         serializer = TodoSerializer(todo, data=request.data)
         if serializer.is_valid():
             serializer.save()
@@ -50,7 +50,7 @@ class TodoDetailView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def patch(self, request, pk):
-        todo = self.get_object(pk)
+        todo = self.get_object(pk, request.user)
         serializer = TodoSerializer(todo, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -58,7 +58,7 @@ class TodoDetailView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
-        todo = self.get_object(pk)
+        todo = self.get_object(pk, request.user)
         todo.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
     

@@ -1,3 +1,4 @@
+from django.urls import reverse
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
@@ -8,9 +9,11 @@ PASSWORD = 'Tr0ub4dour-x9'
 
 
 class RegisterTests(APITestCase):
+    """POST /api/register/ - регистрация нового пользователя."""
+
     url = '/api/register/'
 
-    def test_register_returns_token(self):
+    def test_регистрация_создаёт_пользователя_и_отдаёт_токен(self):
         response = self.client.post(self.url, {
             'email': 'student@mail.ru',
             'password': PASSWORD,
@@ -24,7 +27,7 @@ class RegisterTests(APITestCase):
         user = CustomUser.objects.get(email='student@mail.ru')
         self.assertEqual(Token.objects.get(user=user).key, response.data['token'])
 
-    def test_password_not_in_response(self):
+    def test_пароль_не_возвращается_в_ответе(self):
         response = self.client.post(self.url, {
             'email': 'student@mail.ru',
             'password': PASSWORD,
@@ -34,7 +37,7 @@ class RegisterTests(APITestCase):
         self.assertNotIn('password', response.data)
         self.assertNotIn('password2', response.data)
 
-    def test_password_is_hashed(self):
+    def test_пароль_в_базе_захеширован(self):
         self.client.post(self.url, {
             'email': 'student@mail.ru',
             'password': PASSWORD,
@@ -46,7 +49,7 @@ class RegisterTests(APITestCase):
         self.assertTrue(user.password.startswith('pbkdf2_sha256$'))
         self.assertTrue(user.check_password(PASSWORD))
 
-    def test_passwords_do_not_match(self):
+    def test_пароли_не_совпадают(self):
         response = self.client.post(self.url, {
             'email': 'student@mail.ru',
             'password': PASSWORD,
@@ -54,9 +57,10 @@ class RegisterTests(APITestCase):
         })
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('не совпадают', response.data['password'][0])
         self.assertFalse(CustomUser.objects.filter(email='student@mail.ru').exists())
 
-    def test_weak_password(self):
+    def test_слишком_слабый_пароль(self):
         response = self.client.post(self.url, {
             'email': 'student@mail.ru',
             'password': '123',
@@ -66,7 +70,7 @@ class RegisterTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(CustomUser.objects.filter(email='student@mail.ru').exists())
 
-    def test_email_already_exists(self):
+    def test_email_уже_занят(self):
         CustomUser.objects.create_user(email='student@mail.ru', password=PASSWORD)
 
         response = self.client.post(self.url, {
@@ -78,7 +82,7 @@ class RegisterTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(CustomUser.objects.filter(email='student@mail.ru').count(), 1)
 
-    def test_invalid_email(self):
+    def test_кривой_email(self):
         response = self.client.post(self.url, {
             'email': 'ne-email',
             'password': PASSWORD,
@@ -87,7 +91,8 @@ class RegisterTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_register_allows_anonymous(self):
+    def test_регистрация_открыта_без_авторизации(self):
+        """AllowAny: иначе зарегистрироваться мог бы только уже зарегистрированный."""
         response = self.client.post(self.url, {
             'email': 'student@mail.ru',
             'password': PASSWORD,
@@ -98,12 +103,16 @@ class RegisterTests(APITestCase):
 
 
 class LoginTests(APITestCase):
+    """POST /api/token/ - повторный вход по email и паролю."""
+
     url = '/api/token/'
 
     def setUp(self):
         self.user = CustomUser.objects.create_user(email='student@mail.ru', password=PASSWORD)
 
-    def test_login_returns_token(self):
+    def test_вход_по_email_отдаёт_токен(self):
+        # поле называется username, но модель ищет человека по email,
+        # потому что USERNAME_FIELD = "email"
         response = self.client.post(self.url, {
             'username': 'student@mail.ru',
             'password': PASSWORD,
@@ -112,13 +121,13 @@ class LoginTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['token'], Token.objects.get(user=self.user).key)
 
-    def test_login_returns_same_token(self):
+    def test_повторный_вход_отдаёт_тот_же_токен(self):
         first = self.client.post(self.url, {'username': 'student@mail.ru', 'password': PASSWORD})
         second = self.client.post(self.url, {'username': 'student@mail.ru', 'password': PASSWORD})
 
         self.assertEqual(first.data['token'], second.data['token'])
 
-    def test_wrong_password(self):
+    def test_неверный_пароль(self):
         response = self.client.post(self.url, {
             'username': 'student@mail.ru',
             'password': 'sovsem-drugoy-99',
@@ -128,11 +137,13 @@ class LoginTests(APITestCase):
 
 
 class CustomUserModelTests(APITestCase):
+    """Сама модель пользователя: вход по email вместо username."""
 
-    def test_username_field_is_email(self):
+    def test_у_модели_нет_поля_username(self):
         self.assertEqual(CustomUser.USERNAME_FIELD, 'email')
         self.assertEqual(CustomUser.REQUIRED_FIELDS, [])
 
+        # username = None убирает не атрибут, а само поле - колонки в таблице нет
         field_names = [field.name for field in CustomUser._meta.get_fields()]
         self.assertNotIn('username', field_names)
         self.assertIn('email', field_names)
@@ -151,6 +162,6 @@ class CustomUserModelTests(APITestCase):
         self.assertTrue(admin.is_staff)
         self.assertTrue(admin.is_superuser)
 
-    def test_create_user_without_email(self):
+    def test_без_email_создать_нельзя(self):
         with self.assertRaises(ValueError):
             CustomUser.objects.create_user(email='', password=PASSWORD)

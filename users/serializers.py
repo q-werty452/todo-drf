@@ -5,6 +5,11 @@ from .models import CustomUser
 
 
 class RegisterSerializer(serializers.ModelSerializer):
+    """
+    Регистрация нового пользователя по email.
+    Пароли только на запись (write_only), наружу они не отдаются.
+    """
+
     password = serializers.CharField(
         write_only=True,
         required=True,

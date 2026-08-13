@@ -8,9 +8,17 @@ from .serializers import RegisterSerializer
 
 
 class RegisterView(generics.CreateAPIView):
+    """
+    POST /api/register/ - регистрация нового пользователя.
+
+    Открыт для всех: без AllowAny сюда не пустил бы глобальный
+    IsAuthenticated из REST_FRAMEWORK.
+    В ответе сразу отдаём токен, чтобы после регистрации
+    не ходить отдельно на /api/token/.
+    """
+
     queryset = CustomUser.objects.all()
     serializer_class = RegisterSerializer
-    # без AllowAny сюда не пустил бы глобальный IsAuthenticated
     permission_classes = [AllowAny]
 
     def create(self, request, *args, **kwargs):

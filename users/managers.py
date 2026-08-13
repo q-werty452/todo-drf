@@ -3,9 +3,6 @@ from django.utils.translation import gettext_lazy as _
 
 
 class CustomUserManager(BaseUserManager):
-    """
-    Менеджер пользователей, где email используется вместо username.
-    """
 
     def create_user(self, email, password, **extra_fields):
         if not email:

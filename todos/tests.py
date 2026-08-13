@@ -16,30 +16,30 @@ class TodoAuthTests(APITestCase):
         self.user = CustomUser.objects.create_user(email='student@mail.ru', password=PASSWORD)
         self.todo = Todo.objects.create(owner=self.user, title='Сделать домашку')
 
-    def test_список_без_токена(self):
+    def test_list_without_token(self):
         response = self.client.get('/api/todos/')
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertIn('Authentication credentials', response.data['detail'])
 
-    def test_создание_без_токена(self):
+    def test_create_without_token(self):
         response = self.client.post('/api/todos/', {'title': 'Тайком'})
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(Todo.objects.count(), 1)
 
-    def test_одна_задача_без_токена(self):
+    def test_detail_without_token(self):
         response = self.client.get(f'/api/todos/{self.todo.pk}/')
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_несуществующий_токен(self):
+    def test_invalid_token(self):
         self.client.credentials(HTTP_AUTHORIZATION='Token ' + 'f' * 40)
         response = self.client.get('/api/todos/')
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_токен_без_слова_Token(self):
+    def test_token_without_prefix(self):
         """Частая ошибка в Postman: забыли префикс."""
         key = Token.objects.create(user=self.user).key
         self.client.credentials(HTTP_AUTHORIZATION=key)
@@ -56,19 +56,19 @@ class TodoCrudTests(APITestCase):
         self.token = Token.objects.create(user=self.user)
         self.client.credentials(HTTP_AUTHORIZATION='Token ' + self.token.key)
 
-    def test_создать_задачу(self):
+    def test_create_todo(self):
         response = self.client.post('/api/todos/', {'title': 'Сделать домашку'})
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['title'], 'Сделать домашку')
         self.assertFalse(response.data['completed'])
 
-    def test_владелец_проставляется_из_токена(self):
+    def test_owner_set_from_token(self):
         self.client.post('/api/todos/', {'title': 'Сделать домашку'})
 
         self.assertEqual(Todo.objects.get().owner, self.user)
 
-    def test_чужого_владельца_подсунуть_нельзя(self):
+    def test_cannot_set_other_owner(self):
         """owner не входит в поля сериализатора, поэтому из тела запроса не читается."""
         chuzhoy = CustomUser.objects.create_user(email='petya@mail.ru', password=PASSWORD)
 
@@ -76,7 +76,7 @@ class TodoCrudTests(APITestCase):
 
         self.assertEqual(Todo.objects.get().owner, self.user)
 
-    def test_список_своих_задач(self):
+    def test_list_todos(self):
         Todo.objects.create(owner=self.user, title='Первая')
         Todo.objects.create(owner=self.user, title='Вторая')
 
@@ -85,7 +85,7 @@ class TodoCrudTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 2)
 
-    def test_одна_задача_по_id(self):
+    def test_retrieve_todo(self):
         todo = Todo.objects.create(owner=self.user, title='Сделать домашку')
 
         response = self.client.get(f'/api/todos/{todo.pk}/')
@@ -93,7 +93,7 @@ class TodoCrudTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['title'], 'Сделать домашку')
 
-    def test_patch_меняет_только_переданное(self):
+    def test_patch_todo(self):
         todo = Todo.objects.create(owner=self.user, title='Сделать домашку')
 
         response = self.client.patch(f'/api/todos/{todo.pk}/', {'completed': True})
@@ -102,7 +102,7 @@ class TodoCrudTests(APITestCase):
         self.assertTrue(response.data['completed'])
         self.assertEqual(response.data['title'], 'Сделать домашку')
 
-    def test_put_заменяет_запись_целиком(self):
+    def test_put_todo(self):
         """Разница с PATCH: непереданное completed сбрасывается в значение по умолчанию."""
         todo = Todo.objects.create(owner=self.user, title='Сделать домашку', completed=True)
 
@@ -112,14 +112,14 @@ class TodoCrudTests(APITestCase):
         self.assertEqual(response.data['title'], 'Домашка по математике')
         self.assertFalse(response.data['completed'])
 
-    def test_put_без_обязательного_поля(self):
+    def test_put_requires_title(self):
         todo = Todo.objects.create(owner=self.user, title='Сделать домашку')
 
         response = self.client.put(f'/api/todos/{todo.pk}/', {'completed': True})
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_удалить_задачу(self):
+    def test_delete_todo(self):
         todo = Todo.objects.create(owner=self.user, title='Сделать домашку')
 
         response = self.client.delete(f'/api/todos/{todo.pk}/')
@@ -127,7 +127,7 @@ class TodoCrudTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Todo.objects.filter(pk=todo.pk).exists())
 
-    def test_id_и_created_at_только_на_чтение(self):
+    def test_read_only_fields(self):
         response = self.client.post('/api/todos/', {
             'title': 'Сделать домашку',
             'id': 999,
@@ -150,32 +150,32 @@ class TodoIsolationTests(APITestCase):
         # ходим от лица Пети
         self.client.credentials(HTTP_AUTHORIZATION='Token ' + Token.objects.create(user=self.petya).key)
 
-    def test_чужой_список_пуст(self):
+    def test_other_user_list_is_empty(self):
         response = self.client.get('/api/todos/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data, [])
 
-    def test_чужая_задача_даёт_404_а_не_403(self):
+    def test_other_user_gets_404(self):
         """403 подтвердил бы, что задача существует. 404 не выдаёт ничего."""
         response = self.client.get(f'/api/todos/{self.todo.pk}/')
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_чужую_задачу_нельзя_изменить(self):
+    def test_other_user_cannot_update(self):
         response = self.client.patch(f'/api/todos/{self.todo.pk}/', {'title': 'Взломано'})
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.todo.refresh_from_db()
         self.assertEqual(self.todo.title, 'Задача студента')
 
-    def test_чужую_задачу_нельзя_удалить(self):
+    def test_other_user_cannot_delete(self):
         response = self.client.delete(f'/api/todos/{self.todo.pk}/')
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertTrue(Todo.objects.filter(pk=self.todo.pk).exists())
 
-    def test_у_каждого_свой_список(self):
+    def test_each_user_has_own_list(self):
         Todo.objects.create(owner=self.petya, title='Задача Пети')
 
         response = self.client.get('/api/todos/')

@@ -1,12 +1,17 @@
 from django.contrib.auth import get_user_model
 from rest_framework import status
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Todo
 
 CustomUser = get_user_model()
 PASSWORD = 'Tr0ub4dour-x9'
+
+
+def access_for(user):
+    """access-токен для юзера, без похода на /api/token/."""
+    return str(RefreshToken.for_user(user).access_token)
 
 
 class TodoAuthTests(APITestCase):
@@ -34,15 +39,22 @@ class TodoAuthTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_invalid_token(self):
-        self.client.credentials(HTTP_AUTHORIZATION='Token ' + 'f' * 40)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + 'f' * 40)
+        response = self.client.get('/api/todos/')
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_tampered_token(self):
+        """Подмена данных внутри токена ломает подпись."""
+        header, payload, signature = access_for(self.user).split('.')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {header}.{payload}.xxx')
         response = self.client.get('/api/todos/')
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_token_without_prefix(self):
         """Частая ошибка в Postman: забыли префикс."""
-        key = Token.objects.create(user=self.user).key
-        self.client.credentials(HTTP_AUTHORIZATION=key)
+        self.client.credentials(HTTP_AUTHORIZATION=access_for(self.user))
         response = self.client.get('/api/todos/')
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -53,8 +65,7 @@ class TodoCrudTests(APITestCase):
 
     def setUp(self):
         self.user = CustomUser.objects.create_user(email='student@mail.ru', password=PASSWORD)
-        self.token = Token.objects.create(user=self.user)
-        self.client.credentials(HTTP_AUTHORIZATION='Token ' + self.token.key)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + access_for(self.user))
 
     def test_create_todo(self):
         response = self.client.post('/api/todos/', {'title': 'Сделать домашку'})
@@ -148,7 +159,7 @@ class TodoIsolationTests(APITestCase):
         self.todo = Todo.objects.create(owner=self.student, title='Задача студента')
 
         # ходим от лица Пети
-        self.client.credentials(HTTP_AUTHORIZATION='Token ' + Token.objects.create(user=self.petya).key)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + access_for(self.petya))
 
     def test_other_user_list_is_empty(self):
         response = self.client.get('/api/todos/')

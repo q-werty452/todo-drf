@@ -1,6 +1,6 @@
 from rest_framework import status
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import AccessToken
 
 from .models import CustomUser
 
@@ -12,7 +12,7 @@ class RegisterTests(APITestCase):
 
     url = '/api/register/'
 
-    def test_register_returns_token(self):
+    def test_register_returns_tokens(self):
         response = self.client.post(self.url, {
             'email': 'student@mail.ru',
             'password': PASSWORD,
@@ -21,10 +21,13 @@ class RegisterTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['email'], 'student@mail.ru')
-        self.assertEqual(len(response.data['token']), 40)
+        self.assertIn('access', response.data)
+        self.assertIn('refresh', response.data)
 
+        # внутри access лежит id юзера - за этим в базу ходить не надо.
+        # в payload он строкой, потому что JSON
         user = CustomUser.objects.get(email='student@mail.ru')
-        self.assertEqual(Token.objects.get(user=user).key, response.data['token'])
+        self.assertEqual(int(AccessToken(response.data['access'])['user_id']), user.id)
 
     def test_password_not_in_response(self):
         response = self.client.post(self.url, {
@@ -109,30 +112,66 @@ class LoginTests(APITestCase):
     def setUp(self):
         self.user = CustomUser.objects.create_user(email='student@mail.ru', password=PASSWORD)
 
-    def test_login_returns_token(self):
-        # поле называется username, но модель ищет человека по email,
-        # потому что USERNAME_FIELD = "email"
+    def test_login_returns_pair(self):
+        # поле называется email, потому что USERNAME_FIELD = "email"
         response = self.client.post(self.url, {
-            'username': 'student@mail.ru',
+            'email': 'student@mail.ru',
             'password': PASSWORD,
         })
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['token'], Token.objects.get(user=self.user).key)
+        self.assertIn('access', response.data)
+        self.assertIn('refresh', response.data)
+        self.assertEqual(int(AccessToken(response.data['access'])['user_id']), self.user.id)
 
-    def test_login_returns_same_token(self):
-        first = self.client.post(self.url, {'username': 'student@mail.ru', 'password': PASSWORD})
-        second = self.client.post(self.url, {'username': 'student@mail.ru', 'password': PASSWORD})
+    def test_login_returns_new_token_each_time(self):
+        """В отличие от Token из базы, JWT каждый раз новый: у него свой jti."""
+        first = self.client.post(self.url, {'email': 'student@mail.ru', 'password': PASSWORD})
+        second = self.client.post(self.url, {'email': 'student@mail.ru', 'password': PASSWORD})
 
-        self.assertEqual(first.data['token'], second.data['token'])
+        self.assertNotEqual(first.data['access'], second.data['access'])
+
+    def test_token_is_readable_but_signed(self):
+        """Payload читается кем угодно, поэтому секретов в нём не лежит."""
+        response = self.client.post(self.url, {
+            'email': 'student@mail.ru',
+            'password': PASSWORD,
+        })
+
+        payload = AccessToken(response.data['access']).payload
+        self.assertIn('exp', payload)
+        self.assertNotIn('password', payload)
 
     def test_wrong_password(self):
         response = self.client.post(self.url, {
-            'username': 'student@mail.ru',
+            'email': 'student@mail.ru',
             'password': 'sovsem-drugoy-99',
         })
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class RefreshTests(APITestCase):
+    """POST /api/token/refresh/ - новый access по refresh, без пароля."""
+
+    def setUp(self):
+        CustomUser.objects.create_user(email='student@mail.ru', password=PASSWORD)
+        response = self.client.post('/api/token/', {
+            'email': 'student@mail.ru',
+            'password': PASSWORD,
+        })
+        self.refresh = response.data['refresh']
+
+    def test_refresh_returns_new_access(self):
+        response = self.client.post('/api/token/refresh/', {'refresh': self.refresh})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('access', response.data)
+
+    def test_refresh_with_garbage(self):
+        response = self.client.post('/api/token/refresh/', {'refresh': 'ne-token'})
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 class CustomUserModelTests(APITestCase):

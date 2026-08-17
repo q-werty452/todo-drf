@@ -43,6 +43,7 @@ INSTALLED_APPS = [
 
     'users',
     'todos',
+    'drf_spectacular',
 
 ]
 
@@ -56,11 +57,12 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware', # owner нет в fields сериализат # owner нет в fields сериализатора, поэтому подставляем его здесьора, поэтому подставляем его здесь
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',

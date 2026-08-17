@@ -1,30 +1,24 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from django.shortcuts import get_object_or_404
+from rest_framework import generics
 from .models import Todo
 from .serializers import TodoSerializer
 
 
-class TodoListView(APIView):
+class TodoListCreateView(generics.ListCreateAPIView):
     """
     Эндпоинты для получения списка всех задач и создания новой задачи:
     GET /todos/ - список всех задач
     POST /todos/ - создание новой задачи
     """
-    def get(self, request):
-        todos = Todo.objects.filter(owner=request.user)
-        serializer = TodoSerializer(todos, many=True)
-        return Response(serializer.data)
+    serializer_class = TodoSerializer
 
-    def post(self, request):
-        serializer = TodoSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(owner=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    def get_queryset(self):
+        return Todo.objects.filter(owner=self.request.user)
 
-class TodoDetailView(APIView):
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+
+class TodoDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     """ Эндпоинты для работы с отдельной задачей по id:
 
@@ -32,33 +26,10 @@ class TodoDetailView(APIView):
     Put /todos/<id>/ - обновление задачи по id
     Patch /todos/<id>/ - частичное обновление задачи по id
     Delete /todos/<id>/ - удаление задачи по id"""
-    
-    def get_object(self, pk, user):
-        return get_object_or_404(Todo, pk=pk, owner=user)
 
-    def get(self, request, pk):
-        todo = self.get_object(pk, request.user)
-        serializer = TodoSerializer(todo)
-        return Response(serializer.data)
+    serializer_class = TodoSerializer
 
-    def put(self, request, pk):
-        todo = self.get_object(pk, request.user)
-        serializer = TodoSerializer(todo, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def patch(self, request, pk):
-        todo = self.get_object(pk, request.user)
-        serializer = TodoSerializer(todo, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def delete(self, request, pk):
-        todo = self.get_object(pk, request.user)
-        todo.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-    
+    def get_queryset(self):
+        # по этому же queryset генерик ищет объект,
+        # поэтому чужая задача даёт 404, а не 403
+        return Todo.objects.filter(owner=self.request.user)

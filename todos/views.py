@@ -1,6 +1,24 @@
 from rest_framework import generics
+from rest_framework.viewsets import ModelViewSet
+from rest_framework.permissions import IsAuthenticated
 from .models import Todo
+
+
 from .serializers import TodoSerializer
+
+class TodoViewSet(ModelViewSet):
+
+    """For admin """
+    serializer_class = TodoSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return Todo.objects.all()
+        return Todo.objects.filter(owner = self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
 
 
 class TodoListCreateView(generics.ListCreateAPIView):
@@ -12,10 +30,13 @@ class TodoListCreateView(generics.ListCreateAPIView):
     serializer_class = TodoSerializer
 
     def get_queryset(self):
-        return Todo.objects.filter(owner=self.request.user)
+        if self.request.user.is_staff:
+            return Todo.objects.all()
+        return Todo.objects.filter(owner = self.request.user)
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
+
 
 
 class TodoDetailView(generics.RetrieveUpdateDestroyAPIView):
